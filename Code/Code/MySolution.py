@@ -5,10 +5,11 @@ from numpy.linalg import norm
 ### TODO: import any other packages you need for your solution
 
 def feature_expansion(X, c):
-    x_ = np.broadcast_to(x[:,None,:],(x.shape[0], centroids.shape[0], x.shape[1]))
-    diffs = x_ - centroids
+    x_ = np.broadcast_to(X[:,None,:],(X.shape[0], c.shape[0], X.shape[1]))
+    diffs = x_ - c
     f1 = np.linalg.norm(diffs, ord=2, axis=2)
-    f2 = (x@centroids.T)/(norm(x, ord=2, axis=1, keepdims=True)@(norm(centroids, ord=2, axis=1)[None,:]))
+    f2 = (X@c.T)/ \
+        (norm(X, ord=2, axis=1, keepdims=True)@(norm(c, ord=2, axis=1)[None,:]))
     new_features = np.concat([f1, f2], axis=1)
     return new_features
 
@@ -27,29 +28,23 @@ class OneAgainstAll:
         ''' Task 1-2 
             TODO: train classifier using LP(s) and updated parameters needed in your algorithm 
         '''
-        n, f = trainX.shape
-#         k = trainY.shape[1]
+        n, _ = trainX.shape
+        X = trainX
+        Y = trainY
         
         self.centroids = []
         ##### FEATURE EXPANSION START
-        X = np.concat([trainX, np.ones((n,1))], axis=1)
         for i in range(self.K):
             self.centroids.append(X[Y == i, :].mean(axis=0))
             pass
         self.centroids = np.array(self.centroids)
         new_features = feature_expansion(X, self.centroids)
-        X = np.concat([X, new_features], axis=1)
+        X = np.concat([X, new_features, np.ones((n,1))], axis=1)
         f = X.shape[1]
         ##### FEATURE EXPANSION END
-        
-        Y = trainY
-        
-        self.a_s = []
-#         self.centroids = []
-        
+                
+        self.a_s = []        
         for i in range(self.K):
-#             self.centroids.append(X[Y == i, :].mean(axis=0))
-            
             c = np.concat([np.zeros(f), np.ones(n)])
             S = np.ones(n)
             S[Y != i] = -1
@@ -60,31 +55,29 @@ class OneAgainstAll:
             assert res['success']
             self.a_s.append(res['x'][:f])
             pass
-        self.a_s = np.array(self.a_s)
-#         self.centroids = np.array(self.centroids)
-        
+        self.a_s = np.array(self.a_s)        
     
     def predict(self, testX):
         ''' Task 1-2 
             TODO: predict the class labels of input data (testX) using the trained classifier
         '''
         if len(testX.shape) == 1:
-            X = testX.resize((1, testX.size))
+#             X = testX.resize((1, testX.size))
+            X = testX[None,:]
         else:
+            X = testX
             assert len(testX.shape) == 2
-        n, _ = testX.shape
-        x = np.concat([testX, np.ones((n, 1))], axis=1)
-        # Return the predicted class labels of the input data (testX)
-        res = np.argmax(self.a_s@x.T, axis=0) # Winners of duels
-#         w = self.a_s@x.T # Results of individual classifications, n x k
-        # However, a^T x + b is a poor confidence metric
-        # Instead, let's use distance from centers
-        # The plan: if the classifier fails, p(y=k) = 0
-        # Else, p(y=k) = 1/(1+|x-c_k|_2)
-        # self.centroid - k x f
+        n, _ = X.shape
         
-#         dist = 
-#         confidence = 1/(1+)
+        ##### FEATURE EXPANSION START
+        new_features = feature_expansion(X, self.centroids)
+        X = np.concat([X, new_features, np.ones((n,1))], axis=1)
+        f = X.shape[1]
+        assert X.shape[0] == n
+        ##### FEATURE EXPANSION END
+        
+        # Return the predicted class labels of the input data (testX)
+        res = np.argmax(self.a_s@X.T, axis=0) # Winners of duels
         
         if len(testX.shape) == 1:
             return res.squeeze()
@@ -105,18 +98,27 @@ class OneAgainstOne:
         ### TODO: Initialize other parameters needed in your algorithm
         # examples:
         self.a_s = None
-#         self.centroids = None
+        self.centroids = None
     
     def train(self, trainX, trainY):
         ''' Task 1-2 
             TODO: train classifier using LP(s) and updated parameters needed in your algorithm 
         '''
-        _, f = trainX.shape
-#         k = trainY.shape[1]
-        
-        X = np.concat([trainX, np.ones((trainX.shape[0],1))], axis=1)
-        f += 1 # Performing feature expansion
+        n, _ = trainX.shape
+        X = trainX
         Y = trainY
+        
+        self.centroids = []
+        ##### FEATURE EXPANSION START
+        for i in range(self.K):
+            self.centroids.append(X[Y == i, :].mean(axis=0))
+            pass
+        self.centroids = np.array(self.centroids)
+        new_features = feature_expansion(X, self.centroids)
+        X = np.concat([X, new_features, np.ones((n,1))], axis=1)
+#         X = np.concat([X, np.ones((n,1))], axis=1)
+        f = X.shape[1]
+        ##### FEATURE EXPANSION END
         
         self.A = np.zeros((self.K, self.K, f))
         
@@ -148,36 +150,31 @@ class OneAgainstOne:
             TODO: predict the class labels of input data (testX) using the trained classifier
         '''
         if len(testX.shape) == 1:
-            X = testX.resize((1, testX.size))
+#             X = testX.resize((1, testX.size))
+            X = testX[None,:]
         else:
+            X = testX
             assert len(testX.shape) == 2
-        n, _ = testX.shape
-        x = np.concat([testX, np.ones((n, 1))], axis=1)
+        n, _ = X.shape
+        
+        ##### FEATURE EXPANSION START
+        new_features = feature_expansion(X, self.centroids)
+        X = np.concat([X, new_features, np.ones((n,1))], axis=1)
+#         X = np.concat([X, np.ones((n,1))], axis=1)
+        f = X.shape[1]
+        assert X.shape[0] == n
+        ##### FEATURE EXPANSION END
         
         # self.A = k x k x f
         # x = n x f
         # w = n x k x k
 #         w = x@np.transpose(self.A)
-        wT = self.A@x.T
+        wT = self.A@X.T
         w = wT.T
         w -= np.transpose(w, (0,2,1)) # diagonal is all 0's
-#         assert (w == np.transpose(w, (0,2,1))).all()
         w = np.sign(w) # We want to sum up the number of victories
-#         print(w)
         w = w.sum(axis=2) # n x k
         res = np.argmin(w, axis=1)
-        
-        # Return the predicted class labels of the input data (testX)
-#         res = np.argmax(self.a_s@x.T, axis=0) # Winners of duels
-#         w = self.a_s@x.T # Results of individual classifications, n x k
-        # However, a^T x + b is a poor confidence metric
-        # Instead, let's use distance from centers
-        # The plan: if the classifier fails, p(y=k) = 0
-        # Else, p(y=k) = 1/(1+|x-c_k|_2)
-        # self.centroid - k x f
-        
-#         dist = 
-#         confidence = 1/(1+)
         
         if len(testX.shape) == 1:
             return res.squeeze()
