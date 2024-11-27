@@ -285,6 +285,7 @@ class MyFeatureSelection:
                 trainY[np.isin(trainY, c)] = i
                 pass
             l1_classifier = OneAgainstAll(k)
+            l1_classifier.with_feature_expansion = False
             l1_classifier.train(trainX, trainY)
             feature_weights = np.abs(l1_classifier.a_s).sum(axis=0)
             assert len(feature_weights.shape) == 1
@@ -296,6 +297,7 @@ class MyFeatureSelection:
             clusterer.train(X)
             Y = clusterer.infer_cluster(X)
             classifier = OneAgainstAll(k)
+            classifier.with_feature_expansion = False
             classifier.train(X, Y)
             feature_weights = np.abs(l1_classifier.a_s).sum(axis=0)
             assert len(feature_weights.shape) == 1
