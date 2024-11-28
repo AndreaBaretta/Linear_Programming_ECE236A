@@ -30,7 +30,7 @@ def feature_expansion_svd(X, U=None):
     return (f1, f2), U
 
 #--- Task 1 ---#
-class OneAgainstAll:  
+class OneAgainstAll:
     def __init__(self, K):
         self.K = K  # number of classes
 
@@ -40,11 +40,25 @@ class OneAgainstAll:
         self.centroids = None
         self.with_l1_loss = True
         self.with_feature_expansion = True
+        self.classes = None
+        
+    def align_training_labels(self, Y):
+        self.classes = np.sort(np.unique(Y))
+        for i,c in enumerate(self.classes):
+            Y[np.isin(Y, c)] = i
+            pass
+        return Y
+        
+    def align_inference_labels(self, Y):
+        assert self.classes is not None
+        return self.classes[Y]
     
     def train(self, trainX, trainY):
         ''' Task 1-2 
             TODO: train classifier using LP(s) and updated parameters needed in your algorithm 
         '''
+        trainY = self.align_training_labels(trainY.copy())
+        
         n, f_ = trainX.shape
         X = trainX
         Y = trainY
@@ -60,9 +74,9 @@ class OneAgainstAll:
             X = np.concat([X, *new_features], axis=1)
             svd_feats, self.U = feature_expansion_svd(X)
             X = np.concat([X, *svd_feats], axis=1)
-            X = np.concat([X, np.ones((n,1))], axis=1)
-            f = X.shape[1]
             pass
+        X = np.concat([X, np.ones((n,1))], axis=1)
+        f = X.shape[1]
         ##### FEATURE EXPANSION END
                 
         self.a_s = []        
@@ -103,15 +117,15 @@ class OneAgainstAll:
             X = np.concat([X, *new_features], axis=1)
             svd_feats, _ = feature_expansion_svd(X, self.U)
             X = np.concat([X, *svd_feats], axis=1)
-            X = np.concat([X, np.ones((n,1))], axis=1)
             pass
+        X = np.concat([X, np.ones((n,1))], axis=1)
         f = X.shape[1]
         assert X.shape[0] == n
         ##### FEATURE EXPANSION END
         
         # Return the predicted class labels of the input data (testX)
         res = np.argmax(self.a_s@X.T, axis=0) # Winners of duels
-        
+        res = self.align_inference_labels(res)
         if len(testX.shape) == 1:
             return res.squeeze()
         
@@ -124,6 +138,130 @@ class OneAgainstAll:
         return accuracy
     
 
+class OneAgainstOne:  
+    def __init__(self, K):
+        self.K = K  # number of classes
+
+        ### TODO: Initialize other parameters needed in your algorithm
+        # examples:
+        self.a_s = None
+        self.centroids = None
+        self.with_l1_loss = True
+        self.with_feature_expansion = True
+        self.classes = None
+        
+    def align_training_labels(self, Y):
+        self.classes = np.sort(np.unique(Y))
+        for i,c in enumerate(self.classes):
+            Y[np.isin(Y, c)] = i
+            pass
+        return Y
+        
+    def align_inference_labels(self, Y):
+        assert self.classes is not None
+        return self.classes[Y]
+    
+    def train(self, trainX, trainY):
+        ''' Task 1-2 
+            TODO: train classifier using LP(s) and updated parameters needed in your algorithm 
+        '''
+        trainY = self.align_training_labels(trainY.copy())
+        n, _ = trainX.shape
+        X = trainX
+        Y = trainY
+        
+        self.centroids = []
+        ##### FEATURE EXPANSION START
+        if self.with_feature_expansion:
+            for i in range(self.K):
+                self.centroids.append(X[Y == i, :].mean(axis=0))
+                pass
+            self.centroids = np.array(self.centroids)
+            new_features = feature_expansion(X, self.centroids)
+            X = np.concat([X, *new_features], axis=1)
+            svd_feats, self.U = feature_expansion_svd(X)
+            X = np.concat([X, *svd_feats], axis=1)
+            pass
+        X = np.concat([X, np.ones((n,1))], axis=1)
+        f = X.shape[1]
+        ##### FEATURE EXPANSION END
+        
+        self.A = np.zeros((self.K, self.K, f))
+        
+#         self.centroids = []
+        
+        for i in range(self.K):
+            for j in range(i+1, self.K):
+                X_ = X[(Y == i) | (Y == j), :]
+                Y_ = Y[(Y == i) | (Y == j)]
+                n = Y_.size
+                S = np.ones(n)
+                S[Y_ != i] = -1
+                phi = cp.Variable(n)
+                a = cp.Variable(f)
+                constraints = [
+                    phi >= 0,
+                    (-S[:,None]*X_)@a - phi <= -np.ones(n)
+                ]
+                loss = cp.sum(phi)# + 0.05*cp.sum(cp.abs(a[:-1])))
+                if self.with_l1_loss:
+                    loss += 0.05*cp.sum(cp.abs(a[:-1]))
+                    pass
+                objective = cp.Minimize(loss)
+                prob = cp.Problem(objective, constraints)
+                _ = prob.solve(solver=cp.SCIPY)
+                # print(x.value)
+                self.A[i,j] = a.value
+                pass
+#         self.a_s = np.array(self.a_s)
+#         self.centroids = np.array(self.centroids)
+        
+    
+    def predict(self, testX):
+        ''' Task 1-2 
+            TODO: predict the class labels of input data (testX) using the trained classifier
+        '''
+        if len(testX.shape) == 1:
+#             X = testX.resize((1, testX.size))
+            X = testX[None,:]
+        else:
+            X = testX
+            assert len(testX.shape) == 2
+        n, _ = X.shape
+        
+        ##### FEATURE EXPANSION START
+        if self.with_feature_expansion:
+            new_features = feature_expansion(X, self.centroids)
+            X = np.concat([X, *new_features], axis=1)
+            svd_feats, _ = feature_expansion_svd(X, self.U)
+            X = np.concat([X, *svd_feats], axis=1)
+        X = np.concat([X, np.ones((n,1))], axis=1)
+        f = X.shape[1]
+        assert X.shape[0] == n
+        ##### FEATURE EXPANSION END
+        
+        # self.A = k x k x f
+        # x = n x f
+        # w = n x k x k
+#         w = x@np.transpose(self.A)
+        wT = self.A@X.T
+        w = wT.T
+        w -= np.transpose(w, (0,2,1)) # diagonal is all 0's
+        w = np.sign(w) # We want to sum up the number of victories
+        w = w.sum(axis=2) # n x k
+        res = np.argmin(w, axis=1)
+        res = self.align_inference_labels(res)
+        if len(testX.shape) == 1:
+            return res.squeeze()
+        
+        return res
+
+    def evaluate(self, testX, testY):
+        predY = self.predict(testX)
+        accuracy = accuracy_score(testY, predY)
+
+        return accuracy
+    
 # Task 2
 #--- Task 2 ---#
 class MyClustering:
@@ -409,6 +547,5 @@ class OneAgainstAll_MIP:
         accuracy = accuracy_score(testY, predY)
 
         return accuracy
-    
     
     
