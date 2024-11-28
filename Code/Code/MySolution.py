@@ -283,8 +283,6 @@ class MyClustering:
             n = trainX.shape[0]
             svd_feats, self.U = feature_expansion_svd(trainX)
             trainX = np.concat([trainX, *svd_feats], axis=1)
-            trainX = np.concat([trainX, np.ones((n,1))], axis=1)
-            f = X.shape[1]
             pass
         ##### FEATURE EXPANSION END
         
@@ -334,8 +332,6 @@ class MyClustering:
         if self.with_feature_expansion:
             svd_feats, _ = feature_expansion_svd(testX, self.U)
             testX = np.concat([testX, *svd_feats], axis=1)
-            testX = np.concat([testX, np.ones((n,1))], axis=1)
-            f = X.shape[1]
             pass
         ##### FEATURE EXPANSION END
         
@@ -411,6 +407,7 @@ class MyFeatureSelection:
     def __init__(self, num_features):
         self.num_features = num_features  # target number of features
         ### TODO: Initialize other parameters needed in your algorithm
+        self.sorted_features = None
 
 
     def construct_new_features(self, trainX, trainY=None):  # NOTE: trainY can only be used for construting features for classification task
@@ -425,9 +422,10 @@ class MyFeatureSelection:
             l1_classifier = OneAgainstAll(k)
             l1_classifier.with_feature_expansion = False
             l1_classifier.train(trainX, trainY)
-            feature_weights = np.abs(l1_classifier.a_s).sum(axis=0)
+            feature_weights = np.abs(l1_classifier.a_s).sum(axis=0)[:f]
             assert len(feature_weights.shape) == 1
-            feat_to_keep = feature_weights.argsort()[::-1][:self.num_features]
+            self.sorted_features = feature_weights.argsort()[::-1]
+            feat_to_keep = self.sorted_features[:self.num_features]
         else:
             k = 10
             n, f = trainX.shape
@@ -437,115 +435,12 @@ class MyFeatureSelection:
             classifier = OneAgainstAll(k)
             classifier.with_feature_expansion = False
             classifier.train(X, Y)
-            feature_weights = np.abs(l1_classifier.a_s).sum(axis=0)
+            feature_weights = np.abs(l1_classifier.a_s).sum(axis=0)[:f]
             assert len(feature_weights.shape) == 1
-            feat_to_keep = feature_weights.argsort()[::-1][:self.num_features]
+            self.sorted_features = feature_weights.argsort()[::-1]
+            feat_to_keep = self.sorted_features[:self.num_features]
             
         # Return an index list that specifies which features to keep
         return feat_to_keep
-    
-    
-    
-    
-    
-    
-#--- Task 1 ---#
-class OneAgainstAll_MIP:  
-    def __init__(self, K, num_features):
-        self.K = K  # number of classes
-
-        ### TODO: Initialize other parameters needed in your algorithm
-        # examples:
-        self.a_s = None
-        self.centroids = None
-        self.with_l1_loss = True
-        self.with_feature_expansion = True
-        self.num_features = num_features
-    
-    def train(self, trainX, trainY):
-        ''' Task 1-2 
-            TODO: train classifier using LP(s) and updated parameters needed in your algorithm 
-        '''
-        n, f_ = trainX.shape
-        X = trainX
-        Y = trainY
-        
-        self.centroids = []
-        ##### FEATURE EXPANSION START
-        if self.with_feature_expansion:
-            for i in range(self.K):
-                self.centroids.append(X[Y == i, :].mean(axis=0))
-                pass
-            self.centroids = np.array(self.centroids)
-            new_features = feature_expansion(X, self.centroids)
-            X = np.concat([X, *new_features], axis=1)
-            svd_feats, self.U = feature_expansion_svd(X)
-            X = np.concat([X, *svd_feats], axis=1)
-            X = np.concat([X, np.ones((n,1))], axis=1)
-            f = X.shape[1]
-            pass
-        ##### FEATURE EXPANSION END
-                
-        self.a_s = []        
-        for i in range(self.K):
-            S = np.ones(n)
-            S[Y != i] = -1
-            phi = cp.Variable(n)
-            a = cp.Variable(f)
-            f_s = cp.Variable(f, boolean=True)
-            constraints = [
-                phi >= 0,
-                cp.abs(a) <= f_s * 1000,
-                cp.sum(f_s) == self.num_features,
-                (-S[:,None]*X)@a - phi <= -np.ones(n)
-            ]
-            loss = cp.sum(phi)
-#             if self.with_l1_loss:
-# #                 loss += 0.05*cp.sum(cp.abs(a[:-1]))
-#                 loss += 0.05*cp.sum(f_s)
-#                 pass
-            objective = cp.Minimize(loss)
-            prob = cp.Problem(objective, constraints)
-            _ = prob.solve(solver=cp.SCIPY)
-            self.a_s.append(a.value)
-            pass
-        self.a_s = np.array(self.a_s)        
-    
-    def predict(self, testX):
-        ''' Task 1-2 
-            TODO: predict the class labels of input data (testX) using the trained classifier
-        '''
-        if len(testX.shape) == 1:
-            X = testX[None,:]
-        else:
-            X = testX
-            assert len(testX.shape) == 2
-        n, _ = X.shape
-        
-        ##### FEATURE EXPANSION START
-        if self.with_feature_expansion:
-            new_features = feature_expansion(X, self.centroids)
-            X = np.concat([X, *new_features], axis=1)
-            svd_feats, _ = feature_expansion_svd(X, self.U)
-            X = np.concat([X, *svd_feats], axis=1)
-            X = np.concat([X, np.ones((n,1))], axis=1)
-            pass
-        f = X.shape[1]
-        assert X.shape[0] == n
-        ##### FEATURE EXPANSION END
-        
-        # Return the predicted class labels of the input data (testX)
-        res = np.argmax(self.a_s@X.T, axis=0) # Winners of duels
-        
-        if len(testX.shape) == 1:
-            return res.squeeze()
-        
-        return res
-
-    def evaluate(self, testX, testY):
-        predY = self.predict(testX)
-        accuracy = accuracy_score(testY, predY)
-
-        return accuracy
     
     
